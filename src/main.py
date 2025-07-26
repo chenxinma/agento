@@ -47,4 +47,3 @@ if __name__ == "__main__":
         .handle_before_completion(before_completion) \
         .handle_after_completion(after_completion) \
         .start()
-    

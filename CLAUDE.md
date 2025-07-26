@@ -42,12 +42,13 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 # Basic health check
 curl http://localhost:8000/
 
-# List available models
-curl http://localhost:8000/v1/models
+# List available models (with authentication)
+curl -H "Authorization: Bearer your-api-key" http://localhost:8000/v1/models
 
-# Test chat completion
+# Test chat completion (with authentication)
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer your-api-key" \
   -d '{
     "model": "pydantic-ai-agent",
     "messages": [{"role": "user", "content": "Hello!"}]
@@ -63,6 +64,17 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 - **Port**: 8000 (default)
 - **Model**: Uses OpenAI GPT-4o-mini via pydantic-ai
 - **Dependencies**: FastAPI, uvicorn, pydantic, pydantic-ai
+- **API Key Authentication**: Set `API_KEY` environment variable to enable authentication
+- **Session Salt**: Set `AGENTO_SALT` environment variable for session ID generation (optional)
+
+### Authentication
+When `API_KEY` is set, all endpoints require authentication:\n```bash
+# Set API key
+export API_KEY="your-secret-key"
+
+# Use with curl
+curl -H "Authorization: Bearer your-secret-key" http://localhost:8000/v1/models
+```
 
 ## Python Version
 Requires Python >=3.11 as specified in pyproject.toml
