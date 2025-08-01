@@ -16,7 +16,7 @@ wheels = [
 
 [[package]]
 name = "agento"
-version = "0.1.1"
+version = "0.1.4"
 source = { virtual = "." }
 dependencies = [
     { name = "cryptography" },

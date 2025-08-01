@@ -4,6 +4,7 @@ import time
 from typing import (
     Any,
     AsyncGenerator,
+    Awaitable,
     Callable,
     Dict,
     Generic,
@@ -16,8 +17,8 @@ import uuid
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from fastapi import FastAPI, HTTPException, Header
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Header, Request, Response
+from fastapi.responses import PlainTextResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 from pydantic_ai.agent import AgentRunResult
@@ -28,7 +29,7 @@ from pydantic_ai.tools import AgentDepsT
 # OpenAI API compatible models
 class ChatMessage(BaseModel):
     role: str = Field(..., description="The role of the message author")
-    content: str = Field(..., description="The content of the message")
+    content: Union[str, List[Dict[str, str]]] = Field(..., description="The content of the message")
 
 class ChatCompletionRequest(BaseModel):
     model: str = Field(..., description="ID of the model to use")
@@ -41,6 +42,7 @@ class ChatCompletionRequest(BaseModel):
     stop: Optional[Union[str, List[str]]] = Field(None, description="Stop sequences")
     presence_penalty: Optional[float] = Field(0.0, ge=-2, le=2)
     frequency_penalty: Optional[float] = Field(0.0, ge=-2, le=2)
+    stream_options: Optional[Dict[str, Any]] = Field(None, description="Stream options")
 
 class Choice(BaseModel):
     index: int
@@ -88,6 +90,17 @@ class LLMWrapper:
         self.deps = deps
         self._app = FastAPI(title="Pydantic-AI OpenAI API Wrapper", version="1.0.0")
 
+        # @self._app.middleware("http")
+        # async def add_process_time_header(
+        #     request: Request, call_next: Callable[[Request], Awaitable[Response]]
+        # ) -> Response:
+        #     start_time = time.time()
+        #     # print(await request.json())
+        #     response = await call_next(request)
+        #     process_time = time.time() - start_time
+        #     response.headers["X-Process-Time"] = str(process_time)
+        #     return response
+        
         self._app.add_api_route("/", self._root, methods=["GET"])
         self._app.add_api_route("/v1/models", self._list_models, methods=["GET"])
         self._app.add_api_route("/v1/chat/completions", self._create_chat_completion, methods=["POST"])
@@ -95,6 +108,8 @@ class LLMWrapper:
         self.before_completion = None
         self.after_completion = None
         self.expected_api_keys = []
+    
+    
 
     def handle_before_completion(self, func: Callable[[str, str, HandleContext[AgentDepsT]], list[ModelMessage]]) -> Self:
         self.before_completion = func
@@ -145,10 +160,7 @@ class LLMWrapper:
         _api_key = _api_key.hex()  # 转换为 32 字节长度的十六进制字符串
         return _api_key
     
-    async def _list_models(self, authorization: str = Header(None)):
-        # Validate API key
-        self._auth(authorization)
- 
+    async def _list_models(self): 
         return {
             "object": "list",
             "data": [
@@ -169,7 +181,7 @@ class LLMWrapper:
 
             
             # Convert messages to pydantic-ai format
-            conversation = "\n".join([f"{msg.role}: {msg.content}" for msg in request.messages])
+            conversation = "\n".join([f"{msg.role}: {str(msg.content)}" for msg in request.messages])
             
             if request.stream:
                 return StreamingResponse(
@@ -178,10 +190,24 @@ class LLMWrapper:
                 )
             else:
                 return await self._generate_chat_response(request, conversation, session_id)
-        except HTTPException:
-            raise
         except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+            # Handle validation errors specifically
+            if hasattr(e, 'errors'):
+                # Pydantic validation error
+                error_details = []
+                for error in e.errors(): # pyright: ignore[reportAttributeAccessIssue]
+                    loc = ".".join(str(loc) for loc in error['loc'])
+                    error_details.append(f"{loc}: {error['msg']}")
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "type": "validation_error",
+                        "errors": error_details
+                    }
+                )
+            else:
+                # General error
+                raise HTTPException(status_code=500, detail=str(e))
     
     async def _generate_chat_response(self, request: ChatCompletionRequest, conversation: str, session_id:str) -> ChatCompletionResponse:
         response_id = f"chatcmpl-{uuid.uuid4().hex}"
