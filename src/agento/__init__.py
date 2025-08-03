@@ -1,4 +1,5 @@
 import dataclasses
+import logging
 import os
 import time
 from typing import (
@@ -43,6 +44,9 @@ class ChatCompletionRequest(BaseModel):
     presence_penalty: Optional[float] = Field(0.0, ge=-2, le=2)
     frequency_penalty: Optional[float] = Field(0.0, ge=-2, le=2)
     stream_options: Optional[Dict[str, Any]] = Field(None, description="Stream options")
+    # 添加工具调用相关字段
+    tools: Optional[List[Dict[str, Any]]] = Field(None, description="A list of tools the model may call")
+    tool_choice: Optional[Union[str, Dict[str, Any]]] = Field("auto", description="Controls which tool is called")
 
 class Choice(BaseModel):
     index: int
@@ -86,10 +90,12 @@ class LLMWrapper:
     def __init__(self, 
                 agent:Agent[AgentDepsT, str], 
                 deps: AgentDepsT = None):
+        self.logger = logging.getLogger('LLMWrapper')
         self.agent = agent
         self.deps = deps
         self._app = FastAPI(title="Pydantic-AI OpenAI API Wrapper", version="1.0.0")
 
+        # 检测请求头
         # @self._app.middleware("http")
         # async def add_process_time_header(
         #     request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -130,6 +136,10 @@ class LLMWrapper:
     def start(self, host: str = "0.0.0.0", port: int = 8000, reload: bool = False):
         import uvicorn
         uvicorn.run(self._app, host=host, port=port, reload=reload)
+    
+    def start_https(self, ssl_keyfile:str, ssl_certfile:str, host: str = "0.0.0.0", port: int = 8443, reload: bool = False):
+        import uvicorn
+        uvicorn.run(self._app, host=host, port=port, reload=reload, ssl_keyfile=ssl_keyfile, ssl_certfile=ssl_certfile)
 
     async def _root(self):
         return {"message": "Pydantic-AI OpenAI API Wrapper is running"}
@@ -174,6 +184,7 @@ class LLMWrapper:
         }
     
     async def _create_chat_completion(self, request: ChatCompletionRequest, authorization: str = Header(None)):
+        self.logger.debug(f"Received request: {request}")
         try:
             # Validate API key
             self._auth(authorization)
