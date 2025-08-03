@@ -89,10 +89,12 @@ class HandleContext(Generic[AgentDepsT]):
 class LLMWrapper:
     def __init__(self, 
                 agent:Agent[AgentDepsT, str], 
-                deps: AgentDepsT = None):
+                deps: AgentDepsT = None,
+                agent_name:str="pydantic-ai-agent"):
         self.logger = logging.getLogger('LLMWrapper')
         self.agent = agent
         self.deps = deps
+        self.agent_name = agent_name
         self._app = FastAPI(title="Pydantic-AI OpenAI API Wrapper", version="1.0.0")
 
         # 检测请求头
@@ -175,10 +177,10 @@ class LLMWrapper:
             "object": "list",
             "data": [
                 {
-                    "id": "pydantic-ai-agent",
+                    "id": self.agent_name,
                     "object": "model",
                     "created": int(time.time()),
-                    "owned_by": "pydantic-ai"
+                    "owned_by": "agento(not OpenAI)"
                 }
             ]
         }
